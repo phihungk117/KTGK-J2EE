@@ -1,0 +1,50 @@
+name: Deploy Spring Boot to Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ktrspring/**'
+      - '.github/workflows/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Đăng nhập vào Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build và Push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./ktrspring
+          file: ./ktrspring/Dockerfile
+          push: true
+          tags: kimsoohung/my-web-app:latest
+
+      - name: Gọi Webhook triển khai lên Server
+        run: |
+          REPO="kimsoohung/my-web-app"
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${{ secrets.DEPLOY_URL }}?repo=$REPO&tag=latest")
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          CODE=$(echo "$RESPONSE" | tail -n1)
+          echo "Webhook HTTP: $CODE"
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Deploy thất bại. Xem chi tiết trong nhóm log bên dưới."
+            echo "::group::Chi tiết webhook JSON"
+            echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "Deploy thành công."
+          echo "::group::Chi tiết webhook JSON"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+          echo "::endgroup::"
